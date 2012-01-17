@@ -31,6 +31,7 @@ var pjs = (function(){
     var config = {
             timeoutInterval: 100,
             timeoutLimit: 3000,
+            userAgent: 'pjscrape',
             log: 'stdout',
             writer: 'stdout',
             format: 'json',
@@ -533,6 +534,7 @@ var pjs = (function(){
                 ready: function() { return _pjs.ready; },
                 scrapable: truef,
                 preScrape: truef,
+                preScrapeSuccessful: truef,
                 hashFunction: hashFunctions.id
             }, config, opts);
             // deal with potential arrays and syntax variants
@@ -649,6 +651,10 @@ var pjs = (function(){
                         page.resource = res;
                     }
                 };
+                // Set the user agent
+                if (opts.userAgent) {
+                    page.settings.userAgent = opts.userAgent;
+                }
                 // run the scrape
                 page.open(url, function(status) {
                     // check for load errors
@@ -695,48 +701,51 @@ var pjs = (function(){
                             }
                             // run prescrape
                             page.evaluate(opts.preScrape);
-                            // run each scraper and send any results to writer
-                            if (scrapers && scrapers.length) {
-                                // set up callback manager
-                                var i = 0;
-                                function checkComplete() {
-                                    if (++i == scrapers.length) {
-                                        complete(page);
-                                    }
-                                }
-                                // run all scrapers
-                                scrapers.forEach(function(scraper) {
-                                    if (isFunction(scraper)) {
-                                        // standard scraper
-                                        suite.addItem(page.evaluate(scraper));
-                                        checkComplete();
-                                    } else if (typeof scraper == 'string') {
-                                        // selector-only scraper
-                                        suite.addItem(page.evaluate(new Function(
-                                            "return _pjs.getText('" + scraper + "');"
-                                        )));
-                                        checkComplete();
-                                    } else if (scraper.scraper) {
-                                        // wrapped scraper, more options (just async now)
-                                        if (scraper.async) {
-                                            // start the scrape
-                                            page.evaluate(scraper.scraper);
-                                            // wait for the scraper to return items
-                                            page.waitFor(
-                                                function() {
-                                                    return _pjs.items !== undefined 
-                                                },
-                                                function() {
-                                                    suite.addItem(page.evaluate(function() {
-                                                        return _pjs.items;
-                                                    }));
-                                                    checkComplete();
-                                                }
-                                            );
+                            // wait for preScrapeSuccessful, time out if not successful
+                            page.waitFor(opts.preScrapeSuccessful, function(page) {
+                                // run each scraper and send any results to writer
+                                if (scrapers && scrapers.length) {
+                                    // set up callback manager
+                                    var i = 0;
+                                    function checkComplete() {
+                                        if (++i == scrapers.length) {
+                                            complete(page);
                                         }
                                     }
-                                });
-                            }
+                                    // run all scrapers
+                                    scrapers.forEach(function(scraper) {
+                                        if (isFunction(scraper)) {
+                                            // standard scraper
+                                            suite.addItem(page.evaluate(scraper));
+                                            checkComplete();
+                                        } else if (typeof scraper == 'string') {
+                                            // selector-only scraper
+                                            suite.addItem(page.evaluate(new Function(
+                                                "return _pjs.getText('" + scraper + "');"
+                                            )));
+                                            checkComplete();
+                                        } else if (scraper.scraper) {
+                                            // wrapped scraper, more options (just async now)
+                                            if (scraper.async) {
+                                                // start the scrape
+                                                page.evaluate(scraper.scraper);
+                                                // wait for the scraper to return items
+                                                page.waitFor(
+                                                    function() {
+                                                        return _pjs.items !== undefined 
+                                                    },
+                                                    function() {
+                                                        suite.addItem(page.evaluate(function() {
+                                                            return _pjs.items;
+                                                        }));
+                                                        checkComplete();
+                                                    }
+                                                );
+                                            }
+                                        }
+                                    });
+                                }
+                            });
                         } else {
                             complete(page);
                         }
